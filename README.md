@@ -1,93 +1,111 @@
 # EcoRoute ML
 
+Machine learning pipeline for real-time driving behaviour classification (smooth / moderate / aggressive) using speed telemetry. Part of the EcoRoute carbon-aware route planner FYP.
 
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Project Structure
 
 ```
-cd existing_repo
-git remote add origin https://git.infotech.monash.edu/carbon-route-planner/ecoroute-ml.git
-git branch -M main
-git push -uf origin main
+ecoroute-ml/
+├── ml/
+│   ├── features.py       # Feature extraction from speed windows
+│   └── detector.py       # RealTimeDetector for streaming inference
+├── training/
+│   ├── 01_load.py        # Load and clean eVED dataset
+│   ├── 02_features.py    # Extract rolling-window features
+│   ├── 03_label.py       # K-Means labelling on fuel rate
+│   └── 04_train.py       # Train XGBoost classifier
+├── tests/
+│   └── test_detector.py  # Unit tests for RealTimeDetector
+└── requirements.txt
 ```
 
-## Integrate with your tools
+## Prerequisites
 
-* [Set up project integrations](https://git.infotech.monash.edu/carbon-route-planner/ecoroute-ml/-/settings/integrations)
+- Python 3.10+
+- eVED dataset (weekly CSV files) — download from [https://bitbucket.org/datarepo/eved-dataset](https://bitbucket.org/datarepo/eved-dataset)
 
-## Collaborate with your team
+## Setup
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+**1. Clone the repository**
 
-## Test and Deploy
+```bash
+git clone https://git.infotech.monash.edu/carbon-route-planner/ecoroute-ml.git
+cd ecoroute-ml
+```
 
-Use the built-in continuous integration in GitLab.
+**2. Create and activate a virtual environment**
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+```bash
+python -m venv venv
+source venv/bin/activate        # macOS/Linux
+venv\Scripts\activate.bat       # Windows
+```
 
-***
+**3. Install dependencies**
 
-# Editing this README
+```bash
+pip install -r requirements.txt
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+**4. Add the dataset**
 
-## Suggestions for a good README
+Place the eVED weekly CSV files in:
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```
+training/data/eved/*.csv
+```
 
-## Name
-Choose a self-explaining name for your project.
+> The `data/` folder is excluded from git. Do not commit raw data files.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## Training Pipeline
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+Run each step in order from the repo root:
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+```bash
+# Step 1 — Load and clean raw eVED CSVs
+python training/01_load.py
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+# Step 2 — Extract rolling-window features (10s window, 5s step)
+python training/02_features.py
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+# Step 3 — Label windows via K-Means on fuel rate
+python training/03_label.py
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+# Step 4 — Train XGBoost classifier and save model artifacts
+python training/04_train.py
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+Trained model artifacts are saved to `ml/models/`:
+- `clf_c1.pkl` — XGBoost classifier
+- `scaler_c1.pkl` — fitted StandardScaler
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+## Running Tests
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+```bash
+python -m pytest tests/ -v
+```
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+Or without pytest:
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+```bash
+python tests/test_detector.py
+```
 
-## License
-For open source projects, say how it is licensed.
+> Tests require trained model artifacts in `ml/models/`. Run the training pipeline first.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## Usage (Inference)
+
+```python
+from ml.detector import load_detector
+
+detector = load_detector()
+
+# Push a 10-second speed window (m/s)
+alert = detector.push_window([10.0, 12.0, 8.0, 5.0, 0.0, 4.0, 11.0, 15.0, 9.0, 6.0], timestamp=10.0)
+
+print(detector.last_label)   # 0=smooth, 1=moderate, 2=aggressive
+print(alert)                 # Alert string or None
+
+# Get trip summary
+print(detector.get_trip_summary())
+```
