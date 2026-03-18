@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+celery
+redis
+sqlalchemy
+psycopg2-binary
+xgboost
+scikit-learn
+shap
+dice-ml
+fastsim
+pandas
+numpy
+pyarrow
+python-dotenv
+matplotlib
