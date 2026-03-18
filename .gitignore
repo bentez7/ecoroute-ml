@@ -5,7 +5,8 @@ __pycache__/
 *.h5
 *.parquet
 *.csv
-data/
-**/data/
+eved/
+**/eved/
 .env
 .DS_Store
+shap_summary.png
