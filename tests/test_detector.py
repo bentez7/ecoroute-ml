@@ -29,14 +29,19 @@ SMOOTH_WINDOW     = [10.0] * 10                                      # constant 
 MODERATE_WINDOW   = [8.0, 8.5, 9.0, 9.5, 9.0, 8.5, 8.0, 8.5, 9.0, 9.5]  # gentle variation
 AGGRESSIVE_WINDOW = [0.0, 5.0, 12.0, 20.0, 14.0, 6.0, 0.0, 0.0, 8.0, 18.0]  # hard accel/brake
 
+# Gradient traces (dimensionless rise/run, same length as speed windows)
+FLAT_GRADIENT     = [0.0]  * 10                  # flat road
+UPHILL_GRADIENT   = [0.06] * 10                  # steep 6% uphill (terrain-justified acceleration)
+DOWNHILL_GRADIENT = [-0.06] * 10                 # steep 6% downhill (terrain-justified braking)
+
 LABEL_NAMES = {0: "smooth", 1: "moderate", 2: "aggressive"}
 
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
 
-def run_window(detector, speeds, timestamp=10.0):
-    alert = detector.push_window(speeds, timestamp)
+def run_window(detector, speeds, timestamp=10.0, gradients=None):
+    alert = detector.push_window(speeds, timestamp, gradients=gradients)
     label = detector.last_label
     return label, alert
 
@@ -134,6 +139,84 @@ def test_trip_summary_aggressive_times():
 
 
 # ---------------------------------------------------------------------------
+# Gradient / elevation tests
+# ---------------------------------------------------------------------------
+
+def test_grade_features_extracted():
+    """extract_features should produce grade-aware features when gradients are provided."""
+    from ml.features import extract_features
+
+    # Varying gradient — changes across the window so grade_adj_accel_var differs from accel_var
+    varying_gradient = [0.0, 0.01, 0.05, 0.08, 0.06, 0.02, 0.0, 0.01, 0.03, 0.07]
+
+    feats_flat    = extract_features(np.array(AGGRESSIVE_WINDOW), np.array(FLAT_GRADIENT))
+    feats_uphill  = extract_features(np.array(AGGRESSIVE_WINDOW), np.array(UPHILL_GRADIENT))
+    feats_varying = extract_features(np.array(AGGRESSIVE_WINDOW), np.array(varying_gradient))
+
+    # mean_gradient should differ between flat and uphill
+    assert feats_flat["mean_gradient"]  == 0.0
+    assert feats_uphill["mean_gradient"] > 0.0
+
+    # grade_adj_accel_var should differ from raw accel_var when gradient varies across the window
+    assert feats_varying["grade_adj_accel_var"] != feats_varying["accel_var"], \
+        "Varying gradient should change grade-adjusted acceleration variance"
+
+    # terrain_excuse_accel_n should be > 0 on uphill with hard accels
+    assert feats_uphill["terrain_excuse_accel_n"] > 0, \
+        "Expected terrain excuses on steep uphill with hard acceleration"
+
+    print(f"  PASS  grade features: flat mean_gradient={feats_flat['mean_gradient']}, "
+          f"uphill mean_gradient={feats_uphill['mean_gradient']:.3f}, "
+          f"terrain_excuse_accel_n={feats_uphill['terrain_excuse_accel_n']}")
+
+
+def test_flat_gradient_fallback():
+    """Passing no gradients should give same grade features as explicitly passing flat gradient."""
+    from ml.features import extract_features
+    feats_none = extract_features(np.array(SMOOTH_WINDOW), None)
+    feats_flat = extract_features(np.array(SMOOTH_WINDOW), np.array(FLAT_GRADIENT))
+
+    assert feats_none["mean_gradient"]          == feats_flat["mean_gradient"]
+    assert feats_none["terrain_excuse_accel_n"] == feats_flat["terrain_excuse_accel_n"]
+    assert feats_none["terrain_excuse_brake_n"] == feats_flat["terrain_excuse_brake_n"]
+    print(f"  PASS  flat gradient fallback matches explicit flat gradient")
+
+
+def test_uphill_aggressive_window():
+    """Aggressive speed trace on steep uphill should score fewer terrain_excuse_accel events
+    than the same trace on flat road (proving grade context is captured)."""
+    from ml.features import extract_features
+    feats_flat   = extract_features(np.array(AGGRESSIVE_WINDOW), np.array(FLAT_GRADIENT))
+    feats_uphill = extract_features(np.array(AGGRESSIVE_WINDOW), np.array(UPHILL_GRADIENT))
+
+    assert feats_uphill["terrain_excuse_accel_n"] >= feats_flat["terrain_excuse_accel_n"], \
+        "Uphill should excuse at least as many hard accels as flat road"
+    print(f"  PASS  uphill excuses: flat={feats_flat['terrain_excuse_accel_n']}, "
+          f"uphill={feats_uphill['terrain_excuse_accel_n']}")
+
+
+def test_downhill_brake_excuse():
+    """Steep downhill should generate terrain excuses for hard braking."""
+    from ml.features import extract_features
+    feats_flat     = extract_features(np.array(AGGRESSIVE_WINDOW), np.array(FLAT_GRADIENT))
+    feats_downhill = extract_features(np.array(AGGRESSIVE_WINDOW), np.array(DOWNHILL_GRADIENT))
+
+    assert feats_downhill["terrain_excuse_brake_n"] >= feats_flat["terrain_excuse_brake_n"], \
+        "Downhill should excuse at least as many hard brakes as flat road"
+    print(f"  PASS  downhill brake excuses: flat={feats_flat['terrain_excuse_brake_n']}, "
+          f"downhill={feats_downhill['terrain_excuse_brake_n']}")
+
+
+def test_push_window_with_gradients():
+    """push_window() should accept gradients without error."""
+    det = make_detector()
+    alert = det.push_window(AGGRESSIVE_WINDOW, timestamp=10.0, gradients=UPHILL_GRADIENT)
+    label = det.last_label
+    assert label in (0, 1, 2), f"Unexpected label: {label}"
+    print(f"  PASS  push_window with gradients → label={label} ({LABEL_NAMES[label]}), alert={alert!r}")
+
+
+# ---------------------------------------------------------------------------
 # Manual runner (no pytest needed)
 # ---------------------------------------------------------------------------
 
@@ -147,6 +230,11 @@ if __name__ == "__main__":
         test_push_single_samples,
         test_trip_summary_counts,
         test_trip_summary_aggressive_times,
+        test_grade_features_extracted,
+        test_flat_gradient_fallback,
+        test_uphill_aggressive_window,
+        test_downhill_brake_excuse,
+        test_push_window_with_gradients,
     ]
 
     passed = failed = 0

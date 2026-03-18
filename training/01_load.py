@@ -2,14 +2,17 @@
 Step 1: Load and clean eVED CSV files.
 
 eVED schema (relevant columns):
-  VehId               - vehicle identifier
-  Trip                - trip number (within vehicle)
-  Timestamp(ms)       - elapsed ms since trip start
-  Vehicle Speed[km/h] - speed (converted to m/s here)
-  Fuel Rate[L/hr]     - used for K-Means labelling in 03_label.py
+  VehId                  - vehicle identifier
+  Trip                   - trip number (within vehicle)
+  Timestamp(ms)          - elapsed ms since trip start
+  Vehicle Speed[km/h]    - speed (converted to m/s here)
+  Fuel Rate[L/hr]        - used for K-Means labelling in 03_label.py
+  Elevation Smoothed[m]  - smoothed GPS elevation (optional)
+  Gradient               - road gradient as dimensionless rise/run (optional)
 
 Output: training/data/trips_clean.parquet
-  Columns: trip_id, t, spd (m/s), fuel_rate (L/hr, NaN if unavailable)
+  Columns: trip_id, t, spd (m/s), fuel_rate (L/hr, NaN if unavailable),
+           elevation (m, NaN if unavailable), gradient (NaN if unavailable)
 
 Usage:
   python training/01_load.py
@@ -56,18 +59,32 @@ def clean(raw: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing expected columns: {missing}\nFound: {list(raw.columns)}")
 
-    # Fuel Rate is optional — present in most eVED files but not all
-    has_fuel = "Fuel Rate[L/hr]" in raw.columns
-    cols = required + (["Fuel Rate[L/hr]"] if has_fuel else [])
+    # Optional columns — gracefully absent in some dataset versions
+    has_fuel      = "Fuel Rate[L/hr]"       in raw.columns
+    has_elevation = "Elevation Smoothed[m]"  in raw.columns
+    has_gradient  = "Gradient"               in raw.columns
 
+    optional = []
+    if has_fuel:      optional.append("Fuel Rate[L/hr]")
+    if has_elevation: optional.append("Elevation Smoothed[m]")
+    if has_gradient:  optional.append("Gradient")
+
+    cols = required + optional
     df = raw[cols].copy()
     df.rename(columns={
         "Timestamp(ms)"      : "t_ms",
         "Vehicle Speed[km/h]": "spd_kmh",
     }, inplace=True)
+
     if not has_fuel:
         df["Fuel Rate[L/hr]"] = float("nan")
-        print("  NOTE: 'Fuel Rate[L/hr]' not found — fuel_rate will be NaN (K-Means labelling will fall back to rule-based)")
+        print("  NOTE: 'Fuel Rate[L/hr]' not found — fuel_rate will be NaN")
+    if not has_elevation:
+        df["Elevation Smoothed[m]"] = float("nan")
+        print("  NOTE: 'Elevation Smoothed[m]' not found — elevation will be NaN")
+    if not has_gradient:
+        df["Gradient"] = float("nan")
+        print("  NOTE: 'Gradient' not found — gradient will be NaN (grade-adjusted features will use flat-terrain fallback)")
 
     # Build a unique trip_id string
     df["trip_id"] = df["VehId"].astype(str) + "_" + df["Trip"].astype(str)
@@ -100,8 +117,12 @@ def clean(raw: pd.DataFrame) -> pd.DataFrame:
     print(f"Trips retained: {after} / {before} "
           f"(dropped {before - after} short/sparse trips)")
 
-    df.rename(columns={"Fuel Rate[L/hr]": "fuel_rate"}, inplace=True)
-    return df[["trip_id", "t", "spd", "fuel_rate"]]
+    df.rename(columns={
+        "Fuel Rate[L/hr]"      : "fuel_rate",
+        "Elevation Smoothed[m]": "elevation",
+        "Gradient"             : "gradient",
+    }, inplace=True)
+    return df[["trip_id", "t", "spd", "fuel_rate", "elevation", "gradient"]]
 
 
 def main():

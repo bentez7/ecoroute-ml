@@ -17,8 +17,8 @@ class RealTimeDetector:
         self.last_label     = 0
         self.log            = []
 
-    def _predict(self, speeds: np.ndarray):
-        feats = extract_features(speeds)
+    def _predict(self, speeds: np.ndarray, gradients: np.ndarray = None):
+        feats = extract_features(speeds, gradients)
         X = np.array([[feats[c] for c in FEATURE_COLS]])
         if self.scaler is not None:
             X = self.scaler.transform(X)
@@ -27,7 +27,10 @@ class RealTimeDetector:
         return label, prob
 
     def push(self, speed_mps: float, timestamp: float):
-        """Push one speed sample; returns alert string or None."""
+        """Push one speed sample; returns alert string or None.
+        Note: single-sample push cannot provide gradient data.
+        Use push_window() for grade-aware inference.
+        """
         self.buffer.append(speed_mps)
         if len(self.buffer) < 10:
             return None
@@ -39,9 +42,18 @@ class RealTimeDetector:
             return ALERT_MSGS[2]
         return None
 
-    def push_window(self, speeds: list, timestamp: float):
-        """Receive a full 10-second window at once."""
-        label, prob = self._predict(np.array(speeds))
+    def push_window(self, speeds: list, timestamp: float, gradients: list = None):
+        """Receive a full 10-second window at once.
+
+        Args:
+            speeds:    Speed values in m/s (10 samples).
+            timestamp: Current time in seconds.
+            gradients: Optional road gradient values (same length as speeds).
+                       Pass these for grade-aware classification that forgives
+                       terrain-forced acceleration/braking events.
+        """
+        grads = np.array(gradients) if gradients is not None else None
+        label, prob = self._predict(np.array(speeds), grads)
         self.last_label = label
         self.log.append({'t': timestamp, 'label': label, 'prob': prob})
         if label == 2 and (timestamp - self.last_alert_t) > self.alert_cooldown and prob > 0.70:

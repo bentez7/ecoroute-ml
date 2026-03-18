@@ -4,7 +4,8 @@ Step 2: Extract rolling-window features from cleaned trip data.
 Reads:  training/data/trips_clean.parquet
 Writes: training/data/windows_features.parquet
 
-Each row = one 10-second window (step 5s) with 8 features + trip_id + t_start.
+Each row = one 10-second window (step 5s) with 12 features + trip_id + t_start.
+8 speed-based features + 4 grade-aware features (fallback to flat terrain if gradient unavailable).
 
 Usage:
   python training/02_features.py
@@ -35,13 +36,16 @@ def extract_windows_for_trip(
     """
     speeds     = trip_df["spd"].values
     times      = trip_df["t"].values
-    fuel_rates = trip_df["fuel_rate"].values if "fuel_rate" in trip_df.columns else None
+    fuel_rates = trip_df["fuel_rate"].values  if "fuel_rate"  in trip_df.columns else None
+    gradients  = trip_df["gradient"].values   if "gradient"   in trip_df.columns else None
+    elevations = trip_df["elevation"].values  if "elevation"  in trip_df.columns else None
     n = len(speeds)
     records = []
 
     for start in range(0, n - window_s + 1, step_s):
         end   = start + window_s
-        feats = extract_features(speeds[start:end])
+        grads = gradients[start:end] if gradients is not None else None
+        feats = extract_features(speeds[start:end], grads)
         feats["trip_id"] = trip_df["trip_id"].iloc[0]
         feats["t_start"] = float(times[start])
         # Mean fuel rate for this window — NaN if column not present
@@ -51,6 +55,15 @@ def extract_windows_for_trip(
             feats["fuel_rate_mean"] = float(np.mean(valid)) if len(valid) > 0 else float("nan")
         else:
             feats["fuel_rate_mean"] = float("nan")
+
+        # Mean elevation for this window — informational only, not a model feature
+        if elevations is not None:
+            window_elev = elevations[start:end]
+            valid_elev  = window_elev[~np.isnan(window_elev)]
+            feats["elevation_mean"] = float(np.mean(valid_elev)) if len(valid_elev) > 0 else float("nan")
+        else:
+            feats["elevation_mean"] = float("nan")
+
         records.append(feats)
 
     return records
@@ -79,7 +92,7 @@ def main():
 
     windows = pd.DataFrame(all_records)
     # Reorder columns
-    col_order = ["trip_id", "t_start"] + FEATURE_COLS + ["fuel_rate_mean"]
+    col_order = ["trip_id", "t_start"] + FEATURE_COLS + ["fuel_rate_mean", "elevation_mean"]
     windows = windows[col_order]
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
