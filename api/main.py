@@ -315,7 +315,7 @@ def analyse_segment(body: AnalyseSegmentRequest, request: Request):
 # Dev-utility endpoints (kept for testing / internal tooling)
 # ---------------------------------------------------------------------------
 
-@app.post("/classify", response_model=ClassifyResponse, tags=["Dev Utilities"])
+@app.post("/classify", response_model=ClassifyResponse, tags=["Dev Utilities (Testing Only)"])
 def classify(body: WindowPayload, request: Request):
     """Stateless classification — no cooldown, no session state."""
     det   = request.app.state.detector
@@ -329,7 +329,7 @@ def classify(body: WindowPayload, request: Request):
     )
 
 
-@app.post("/trip/start", response_model=TripStartResponse, status_code=201, tags=["Dev Utilities"])
+@app.post("/trip/start", response_model=TripStartResponse, status_code=201, tags=["Dev Utilities (Testing Only)"])
 def trip_start(request: Request):
     trips = request.app.state.trips
     _evict_stale(trips)
@@ -340,7 +340,7 @@ def trip_start(request: Request):
     return TripStartResponse(trip_id=trip_id)
 
 
-@app.post("/trip/{trip_id}/window", response_model=ClassifyResponse, tags=["Dev Utilities"])
+@app.post("/trip/{trip_id}/window", response_model=ClassifyResponse, tags=["Dev Utilities (Testing Only)"])
 def trip_window(trip_id: str, body: WindowPayload, request: Request):
     session = _get_session(request, trip_id)
     session.last_used = time()
@@ -355,14 +355,14 @@ def trip_window(trip_id: str, body: WindowPayload, request: Request):
     )
 
 
-@app.get("/trip/{trip_id}/summary", response_model=TripSummaryResponse, tags=["Dev Utilities"])
+@app.get("/trip/{trip_id}/summary", response_model=TripSummaryResponse, tags=["Dev Utilities (Testing Only)"])
 def trip_summary(trip_id: str, request: Request):
     session = _get_session(request, trip_id)
     summary = session.detector.get_trip_summary()
     return TripSummaryResponse(trip_id=trip_id, **summary)
 
 
-@app.delete("/trip/{trip_id}", status_code=204, tags=["Dev Utilities"])
+@app.delete("/trip/{trip_id}", status_code=204, tags=["Dev Utilities (Testing Only)"])
 def trip_delete(trip_id: str, request: Request):
     trips = request.app.state.trips
     if trip_id not in trips:
