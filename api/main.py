@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from ml.detector import (
     RealTimeDetector, LABEL_MAP, FEATURE_COLS,
-    diagnose_aggressive, load_detector,
+    diagnose_aggressive, diagnose_moderate, load_detector,
     load_explainer, compute_shap_top_feature,
 )
 
@@ -39,10 +39,9 @@ from ml.detector import (
 # Constants
 # ---------------------------------------------------------------------------
 
-MAX_SESSIONS     = 50
-SESSION_TTL_S    = 3600   # 1 hour
-ALERT_COOLDOWN_S = 15
-WINDOW_SIZE      = 10     # seconds / samples (1 Hz telemetry)
+MAX_SESSIONS  = 50
+SESSION_TTL_S = 3600   # 1 hour
+WINDOW_SIZE   = 10     # seconds / samples (1 Hz telemetry)
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +102,6 @@ class TripBuffer:
     detector:      RealTimeDetector
     points:        list  = field(default_factory=list)
     segment_index: int   = 0
-    last_alert_t:  float = field(default_factory=lambda: -float('inf'))
     last_used:     float = field(default_factory=time)
 
 
@@ -192,7 +190,8 @@ class SegmentResult(BaseModel):
     ended_at:          str
     behaviour_label:   str            # smooth / moderate / aggressive
     confidence:        float
-    alert:             Optional[str]  # specific reason or null (15s cooldown per trip)
+    alert:             Optional[str]  # human-readable nudge; null for smooth windows (no feedback event created)
+    severity:          Optional[str]  # 'info' for moderate, 'warning' for aggressive, null for smooth
     avg_speed_kmh:     float
     accel_variance:    float
     braking_frequency: float          # hard braking events / km  (0 if near-stationary)
@@ -275,11 +274,17 @@ def analyse_segment(body: AnalyseSegmentRequest, request: Request):
 
         label, prob, feats = buf.detector.predict_window(speeds, gradients)
 
-        # Alert with per-trip cooldown (does not use detector's internal cooldown)
-        alert = None
-        if label == 2 and prob > 0.70 and (timestamp - buf.last_alert_t) > ALERT_COOLDOWN_S:
-            buf.last_alert_t = timestamp
-            alert = diagnose_aggressive(feats)
+        # Always emit a message for non-smooth windows so every feedback event
+        # the backend creates has a human-readable nudge. Smooth windows skip
+        # the message — the backend won't create a feedback event for them.
+        alert    = None
+        severity = None
+        if label == 1:
+            alert    = diagnose_moderate(feats)
+            severity = 'info'
+        elif label == 2:
+            alert    = diagnose_aggressive(feats)
+            severity = 'warning'
 
         # SHAP top feature — gracefully skipped if shap not installed
         shap_top = 'accel_variance'
@@ -300,6 +305,7 @@ def analyse_segment(body: AnalyseSegmentRequest, request: Request):
             behaviour_label   = LABEL_MAP[label],
             confidence        = round(prob, 4),
             alert             = alert,
+            severity          = severity,
             avg_speed_kmh     = round(mean_spd_kmh, 2),
             accel_variance    = round(feats['accel_var'], 4),
             braking_frequency = round(braking_freq, 4),

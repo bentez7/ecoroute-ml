@@ -31,6 +31,24 @@ def diagnose_aggressive(feats: dict) -> str:
     return ALERT_MSGS[2]
 
 
+def diagnose_moderate(feats: dict) -> str:
+    """
+    Gentle advisory for label == 1 (moderate) windows. Same feature priority as
+    diagnose_aggressive but softer phrasing — these are suggestions, not warnings.
+    """
+    if feats.get('hard_brake_n', 0) >= 1:
+        return "Try braking earlier and more gradually"
+    if feats.get('hard_accel_n', 0) >= 1:
+        return "Ease into the throttle for better efficiency"
+    if feats.get('accel_var', 0) > 1.5:
+        return "Aim for steadier acceleration"
+    if feats.get('idle_frac', 0) > 0.3:
+        return "Long idle — consider switching off if stopped for a while"
+    if feats.get('speed_var', 0) > 3.0:
+        return "Try to hold a more consistent speed"
+    return "Driving could be a touch smoother"
+
+
 class RealTimeDetector:
     def __init__(self, clf, scaler=None, window=10, alert_cooldown=15):
         self.clf            = clf
