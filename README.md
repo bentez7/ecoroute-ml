@@ -42,7 +42,7 @@ flowchart LR
     B -. "Supabase Realtime nudge" .-> M
 ```
 
-**Team:** Teng Kong Cheng, Wong Wei Jian, Benjamin Tan En Zhe. Teng Kong Cheng built most of this service. My own work (Benjamin) was mainly on the [mobile app](https://github.com/bentez7/ecoroute-mobile), including the UI that presents these coaching results to the driver.
+**Team:** Built by a team of three as our Final Year Project at Monash University Malaysia (2026).
 
 ---
 
