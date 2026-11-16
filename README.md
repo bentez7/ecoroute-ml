@@ -44,6 +44,8 @@ flowchart LR
 
 **Team:** Built by a team of three as our Final Year Project at Monash University Malaysia (2026).
 
+**My contributions (Benjamin Tan, [@bentez7](https://github.com/bentez7)):** mobile app front end (main map screen with Mapbox, route-selection screen, sign-in/sign-up and auth state, stats screen), the app's API client, the backend routing service, and the ML coaching integration together with a teammate.
+
 ---
 
 ## Service API
